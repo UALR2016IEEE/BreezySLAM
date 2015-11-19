@@ -21,20 +21,19 @@ along with this code.  If not, see <http:#www.gnu.org/licenses/>.
 
 # distanceScanToMap is implemented as a C extension for efficiency
 from pybreezyslam import distanceScanToMap
-
 import pybreezyslam
-
 import math
 import time
 
 # Basic params
-_DEFAULT_MAP_QUALITY         = 50 # out of 255
-_DEFAULT_HOLE_WIDTH_MM       = 600
+_DEFAULT_MAP_QUALITY = 50  # out of 255
+_DEFAULT_HOLE_WIDTH_MM = 600
 
 # Random mutation hill-climbing (RMHC) params
-_DEFAULT_SIGMA_XY_MM         = 100
+_DEFAULT_SIGMA_XY_MM = 100
 _DEFAULT_SIGMA_THETA_DEGREES = 20
-_DEFAULT_MAX_SEARCH_ITER     = 1000
+_DEFAULT_MAX_SEARCH_ITER = 1000
+
 
 # CoreSLAM class ------------------------------------------------------------------------------------------------------
 
@@ -61,9 +60,9 @@ class CoreSLAM(object):
     
     to update the map and point-cloud (particle cloud).
     '''
-    
-    def __init__(self, laser, map_size_pixels, map_size_meters, 
-        map_quality=_DEFAULT_MAP_QUALITY, hole_width_mm=_DEFAULT_HOLE_WIDTH_MM):
+
+    def __init__(self, laser, map_size_pixels, map_size_meters,
+                 map_quality=_DEFAULT_MAP_QUALITY, hole_width_mm=_DEFAULT_HOLE_WIDTH_MM):
         '''
         Creates a CoreSLAM object suitable for updating with new Lidar and odometry data.
         laser is a Laser object representing the specifications of your Lidar unit
@@ -72,24 +71,24 @@ class CoreSLAM(object):
         quality from 0 through 255 determines integration speed of scan into map
         hole_width_mm determines width of obstacles (walls)
         '''
-    
+
         # Initialize parameters
         self.map_quality = map_quality
-        self.hole_width_mm = hole_width_mm   
-        
+        self.hole_width_mm = hole_width_mm
+
         # Store laser for later
         self.laser = laser
-        
+
         # Initialize velocities (dxyMillimeters, dthetaDegrees, dtSeconds) for odometry
         self.velocities = (0, 0, 0)
-        
+
         # Initialize a scan for computing distance to map, and one for updating map
         self.scan_for_distance = pybreezyslam.Scan(laser, 1)
         self.scan_for_mapbuild = pybreezyslam.Scan(laser, 3)
-                
+
         # Initialize the map 
         self.map = pybreezyslam.Map(map_size_pixels, map_size_meters)
-                
+
     def update(self, scans_mm, velocities):
         '''
         Updates the scan and odometry, and calls the the implementing class's _updateMapAndPointcloud method with
@@ -105,37 +104,32 @@ class CoreSLAM(object):
         self._scan_update(self.scan_for_distance, scans_mm)
 
         # Update velocities
-        velocity_factor = (1 / velocities[2])  if (velocities[2] > 0) else 0
-        new_dxy_mm = velocities[0] * velocity_factor  
+        velocity_factor = (1 / velocities[2]) if (velocities[2] > 0) else 0
+        new_dxy_mm = velocities[0] * velocity_factor
         new_dtheta_degrees = velocities[1] * velocity_factor
         self.velocities = (new_dxy_mm, new_dtheta_degrees, 0)
-                                                  
+
         # Implementing class updates map and pointcloud
         self._updateMapAndPointcloud(velocities)
-        
+
     def getmap(self, mapbytes):
         '''
         Fills bytearray mapbytes with map pixels, where bytearray length is square of map size passed
         to CoreSLAM.__init__().
         '''
         self.map.get(mapbytes)
-        
-        
+
     def __str__(self):
-        
         return 'CoreSLAM: %s \n          map quality = %d / 255 \n          hole width = %7.0f mm' % \
                (str(self.map), self.map_quality, self.hole_width_mm)
-                
-    def __repr__(self):
-        
-         return self.__str__()
 
-        
+    def __repr__(self):
+        return self.__str__()
+
     def _scan_update(self, scan, lidar):
-        
         scan.update(scans_mm=lidar, hole_width_mm=self.hole_width_mm, velocities=self.velocities)
-        
-        
+
+
 # SinglePositionSLAM class ---------------------------------------------------------------------------------------------
 
 class SinglePositionSLAM(CoreSLAM):
@@ -148,64 +142,71 @@ class SinglePositionSLAM(CoreSLAM):
     to compute a new position based on searching from a starting position.
     '''
 
-    def __init__(self, laser, map_size_pixels, map_size_meters, 
-                map_quality=_DEFAULT_MAP_QUALITY, hole_width_mm=_DEFAULT_HOLE_WIDTH_MM):
+    def __init__(self, laser, map_size_pixels, map_size_meters,
+                 map_quality=_DEFAULT_MAP_QUALITY, hole_width_mm=_DEFAULT_HOLE_WIDTH_MM, init_x=None, init_y=None, init_r=None):
 
-        CoreSLAM.__init__(self, laser, map_size_pixels, map_size_meters, 
-            map_quality, hole_width_mm)                    
-                    
+        CoreSLAM.__init__(self, laser, map_size_pixels, map_size_meters,
+                          map_quality, hole_width_mm)
+
         # Initialize the position (x, y, theta)
-        init_coord_mm = 500 * map_size_meters # center of map
-        self.position =  pybreezyslam.Position(init_coord_mm, init_coord_mm, 0)
-        
+        if init_x is not None and init_y is not None and init_r is not None:
+            init_x *= 1000 * map_size_meters
+            init_y *= 1000 * map_size_meters
+        else:
+            init_x = 500 * map_size_meters  # center of map
+            init_y = 500 * map_size_meters  # center of map
+            init_r = 0
+
+        self.position = pybreezyslam.Position(init_x, init_y, init_r)
+
     def _updateMapAndPointcloud(self, velocities):
         '''
         Updates the map and point-cloud (particle cloud). Called automatically by CoreSLAM.update()
         velocities is a tuple of the form (dxy_mm, dtheta_degrees, dt_seconds).
         '''
-    
-        # Start at current position 
+
+        # Start at current position
         start_pos = self.position.copy()
-        
+
         # Add effect of velocities
-        start_pos.x_mm      += velocities[0] * self._costheta()
-        start_pos.y_mm      += velocities[0] * self._sintheta()
-        start_pos.theta_degrees = start_pos.theta_degrees +  velocities[1]
+        start_pos.x_mm += velocities[0] * self._costheta()
+        start_pos.y_mm += velocities[0] * self._sintheta()
+        start_pos.theta_degrees = start_pos.theta_degrees + velocities[1]
 
         # Add offset from laser
-        start_pos.x_mm  += self.laser.offset_mm * self._costheta()
-        start_pos.y_mm  += self.laser.offset_mm * self._sintheta()
+        start_pos.x_mm += self.laser.offset_mm * self._costheta()
+        start_pos.y_mm += self.laser.offset_mm * self._sintheta()
 
         # Get new position from implementing class
         new_position = self._getNewPosition(start_pos)
-                
+
         # Update the map with this new position
         self.map.update(self.scan_for_mapbuild, new_position, self.map_quality, self.hole_width_mm)
-      
+
         # Update the current position with this new position, adjusted by laser offset
-        self.position = new_position.copy()        
+        self.position = new_position.copy()
         self.position.x_mm -= self.laser.offset_mm * self._costheta()
         self.position.y_mm -= self.laser.offset_mm * self._sintheta()
-  
+
     def getpos(self):
         '''
         Returns current position as a tuple (x_mm, y_mm, theta_degrees)
         '''
         return (self.position.x_mm, self.position.y_mm, self.position.theta_degrees)
-                
-        
+
     def _costheta(self):
-        
+
         return math.cos(self._thetaradians())
- 
+
     def _sintheta(self):
-        
+
         return math.sin(self._thetaradians())
-        
+
     def _thetaradians(self):
-        
+
         return math.radians(self.position.theta_degrees)
-        
+
+
 # RMHC_SLAM class ------------------------------------------------------------------------------------------------------
 
 class RMHC_SLAM(SinglePositionSLAM):
@@ -213,11 +214,11 @@ class RMHC_SLAM(SinglePositionSLAM):
     RMHC_SLAM implements the _getNewPosition() method of SinglePositionSLAM using Random-Mutation Hill-Climbing
     search.  Uses its own internal pseudorandom-number generator for efficiency.
     '''
-    
-    def __init__(self, laser, map_size_pixels, map_size_meters, 
-                map_quality=_DEFAULT_MAP_QUALITY, hole_width_mm=_DEFAULT_HOLE_WIDTH_MM,
-                random_seed=None, sigma_xy_mm=_DEFAULT_SIGMA_XY_MM, sigma_theta_degrees=_DEFAULT_SIGMA_THETA_DEGREES, 
-                max_search_iter=_DEFAULT_MAX_SEARCH_ITER):
+
+    def __init__(self, laser, map_size_pixels, map_size_meters,
+                 map_quality=_DEFAULT_MAP_QUALITY, hole_width_mm=_DEFAULT_HOLE_WIDTH_MM,
+                 random_seed=None, sigma_xy_mm=_DEFAULT_SIGMA_XY_MM, sigma_theta_degrees=_DEFAULT_SIGMA_THETA_DEGREES,
+                 max_search_iter=_DEFAULT_MAX_SEARCH_ITER, init_x=None, init_y=None, init_r=None):
         '''
         Creates a RMHCSlam object suitable for updating with new Lidar and odometry data.
         laser is a Laser object representing the specifications of your Lidar unit
@@ -226,64 +227,64 @@ class RMHC_SLAM(SinglePositionSLAM):
         quality from 0 through 255 determines integration speed of scan into map
         hole_width_mm determines width of obstacles (walls)
         random_seed supports reproducible results; defaults to system time if unspecified
-        sigma_xy_mm specifies the standard deviation in millimeters of the normal distribution of 
+        sigma_xy_mm specifies the standard deviation in millimeters of the normal distribution of
            the (X,Y) component of position for RMHC search
-        sigma_theta_degrees specifies the standard deviation in degrees of the normal distribution of 
+        sigma_theta_degrees specifies the standard deviation in degrees of the normal distribution of
            the rotational component of position for RMHC search
         max_search_iter specifies the maximum number of iterations for RMHC search
         '''
-    
-        SinglePositionSLAM.__init__(self, laser, map_size_pixels, map_size_meters, 
-            map_quality, hole_width_mm)
-            
+
+        SinglePositionSLAM.__init__(self, laser, map_size_pixels, map_size_meters,
+                                    map_quality, hole_width_mm, init_x, init_y, init_r)
+
         if not random_seed:
             random_seed = int(time.time()) & 0xFFFF
-            
+
         self.randomizer = pybreezyslam.Randomizer(random_seed)
-        
+
         self.sigma_xy_mm = sigma_xy_mm
         self.sigma_theta_degrees = sigma_theta_degrees
         self.max_search_iter = max_search_iter
-        
+
     def update(self, scan_mm, velocities=None):
 
         if not velocities:
-        
             velocities = (0, 0, 0)
-    
-        CoreSLAM.update(self, scan_mm, velocities)    
-    
+
+        CoreSLAM.update(self, scan_mm, velocities)
+
     def _getNewPosition(self, start_position):
         '''
         Implements the _getNewPosition() method of SinglePositionSLAM. Uses Random-Mutation Hill-Climbing
         search to look for a better position based on a starting position.
-        '''     
-        
+        '''
+
         # RMHC search is implemented as a C extension for efficiency
         return pybreezyslam.rmhcPositionSearch(
-            start_position, 
-            self.map, 
-            self.scan_for_distance, 
+            start_position,
+            self.map,
+            self.scan_for_distance,
             self.laser,
             self.sigma_xy_mm,
             self.sigma_theta_degrees,
             self.max_search_iter,
             self.randomizer)
-                             
+
     def _random_normal(self, mu, sigma):
-        
+
         return mu + self.randomizer.rnor() * sigma
 
- # Deterministic_SLAM class  ------------------------------------------------------------------------------------        
+        # Deterministic_SLAM class  ------------------------------------------------------------------------------------
+
 
 class Deterministic_SLAM(SinglePositionSLAM):
     '''
     Deterministic_SLAM implements the _getNewPosition() method of SinglePositionSLAM by simply
     copying the search-start position.
     '''
-    
-    def __init__(self, laser, map_size_pixels, map_size_meters, 
-                map_quality=_DEFAULT_MAP_QUALITY, hole_width_mm=_DEFAULT_HOLE_WIDTH_MM):
+
+    def __init__(self, laser, map_size_pixels, map_size_meters,
+                 map_quality=_DEFAULT_MAP_QUALITY, hole_width_mm=_DEFAULT_HOLE_WIDTH_MM, init_x=None, init_y=None, init_r=None):
         '''
         Creates a Deterministic_Slam object suitable for updating with new Lidar and odometry data.
         laser is a Laser object representing the specifications of your Lidar unit
@@ -292,15 +293,15 @@ class Deterministic_SLAM(SinglePositionSLAM):
         quality from 0 through 255 determines integration speed of scan into map
         hole_width_mm determines width of obstacles (walls)
         '''
-    
-        SinglePositionSLAM.__init__(self, laser, map_size_pixels, map_size_meters, 
-            map_quality, hole_width_mm)                    
-       
+
+        SinglePositionSLAM.__init__(self, laser, map_size_pixels, map_size_meters,
+                                    map_quality, hole_width_mm, init_x, init_y, init_r)
+
     def _getNewPosition(self, start_position):
         '''
         Implements the _getNewPosition() method of SinglePositionSLAM. Returns a copy of the starting position.
         '''
-        
+
         return start_position.copy()
         
   
