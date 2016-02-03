@@ -86,6 +86,10 @@ int *
 int_alloc(
     int size);
 
+double *
+double_alloc(
+    int size);
+
 void 
 map_init(
     map_t * map, 
@@ -129,7 +133,8 @@ void scan_string(
 void 
 scan_update(
     scan_t * scan, 
-    int * lidar_mm, 
+    int * lidar_mm,
+    double * angles,
     double hole_width_mm,
     double velocities_dxy_mm,
     double velocities_dtheta_degrees);

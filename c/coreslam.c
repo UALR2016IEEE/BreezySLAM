@@ -56,12 +56,6 @@ static void * safe_malloc(size_t size)
     return v;
 }
 
-
-static double * double_alloc(int size)
-{
-    return (double *)safe_malloc(size * sizeof(double));
-}
-
 static float * float_alloc(int size)
 {
     return (float *)safe_malloc(size * sizeof(float));
@@ -236,22 +230,14 @@ static void
         int distance,
         int scanval,
         double horz_mm,
-        double rotation)
+        double rotation,
+        double angle)
 {
-    int j;
-    for (j=0; j<scan->span; ++j)
-    {
-        double k = (double)(offset*scan->span+j) * scan->detection_angle_degrees / (scan->size * scan->span - 1);
-        double angle = radians(-scan->detection_angle_degrees/2 + k * rotation);
-        double x = distance * cos(angle) - k * horz_mm;
-        double y = distance * sin(angle);
         
         scan->value[scan->npoints] = scanval;
-        
-        scan->x_mm[scan->npoints] = x;
-        scan->y_mm[scan->npoints] = y;
+        scan->x_mm[scan->npoints] = distance * cos(angle);
+        scan->y_mm[scan->npoints] = -distance * sin(angle);
         scan->npoints++;
-    }
 }
 
 
@@ -262,6 +248,13 @@ int *
         int size)
 {
     return (int *)safe_malloc(size * sizeof(int));
+}
+
+double *
+        double_alloc(
+        int size)
+{
+    return (double *)safe_malloc(size * sizeof(double));
 }
 
 void
@@ -432,6 +425,7 @@ void
 scan_update(
         scan_t * scan,
         int * lidar_mm,
+        double * angles,
         double hole_width_mm,
         double velocities_dxy_mm,
         double velocities_dtheta_degrees)
@@ -446,15 +440,16 @@ scan_update(
     
     scan->npoints = 0;
     scan->obst_npoints = 0;
-    
+
     for (i=scan->detection_margin+1; i<scan->size-scan->detection_margin; ++i)
     {
         int lidar_value_mm = lidar_mm[i];
+        double angle = angles[i];
         
         /* No obstacle */
         if (lidar_value_mm == 0)
         {
-            scan_update_xy(scan, i, (int)scan->distance_no_detection_mm, NO_OBSTACLE, horz_mm, rotation);
+            scan_update_xy(scan, i, (int)scan->distance_no_detection_mm, NO_OBSTACLE, horz_mm, rotation, angle);
         }
         
         /* Obstacle */
@@ -464,7 +459,7 @@ scan_update(
          
             int j = 0;
             
-            scan_update_xy(scan, i, lidar_value_mm, OBSTACLE, horz_mm, rotation);
+            scan_update_xy(scan, i, lidar_value_mm, OBSTACLE, horz_mm, rotation, angle);
             
             /* Store obstacles separately for SSE */
             for (j=oldstart; j<scan->npoints; ++j)
@@ -496,7 +491,7 @@ position_t
     
     int current_distance = distance_scan_to_map(map, scan, currentpos);
     
-    int lowest_distance =  current_distance;
+    int lowest_distance = current_distance;
     int last_lowest_distance = current_distance;
     
     int counter = 0;

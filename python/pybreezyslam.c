@@ -41,6 +41,8 @@ Change log:
 */
 
 #include <Python.h>
+#include <numpy/ndarraytypes.h>
+#include <numpy/ndarrayobject.h>
 #include <structmember.h>
 
 #include "../c/coreslam.h"
@@ -200,6 +202,7 @@ typedef struct
     
     scan_t scan;
     int * lidar_mm;
+    double * angles;
     
 } Scan;
 
@@ -210,6 +213,7 @@ Scan_dealloc(Scan* self)
     scan_free(&self->scan);
     
     free(self->lidar_mm);
+    free(self->angles);
     
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
@@ -259,14 +263,15 @@ Scan_init(Scan *self, PyObject *args, PyObject *kwds)
     scan_init(
             &self->scan, 
             span,
-            scan_size, 
+            scan_size,
             scan_rate_hz,                
             detection_angle_degrees,     
             distance_no_detection_mm,    
             detection_margin,               
             offset_mm);
  
-    self->lidar_mm = int_alloc(self->scan.size);
+    self->lidar_mm = int_alloc(self->scan.size * 5);
+    self->angles = double_alloc(self->scan.size * 5);
     
     return 0;
 }
@@ -284,78 +289,144 @@ Scan_str(Scan *self)
     return  PyUnicode_FromString(str);
 }
 
-
 static PyObject *
 Scan_update(Scan *self, PyObject *args, PyObject *kwds)
 {
-    PyObject * py_lidar = NULL;
+    PyObject *py_lidar = NULL, *py_velocities = NULL;
+    PyArrayObject *py_lidar_array = NULL, *py_velocities_array = NULL;
     double hole_width_mm = 0;
-    PyObject * py_velocities = NULL;
 
-    static char* argnames[] = {"scans_mm", "hole_width_mm", "velocities", NULL};
+    static char* argnames[] = {"scan", "hole_width_mm", "velocities", NULL};
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds,"Od|O", argnames,
-        &py_lidar, 
+        &py_lidar,
         &hole_width_mm,
         &py_velocities))
     {
-        return null_on_raise_argument_exception("Scan", "update");
+        return null_on_raise_argument_exception("Scan", "test_fn");
     }
 
-    // Bozo filter on LIDAR argument
-    if (!PyList_Check(py_lidar))
-    {
-        return null_on_raise_argument_exception_with_details("Scan", "update", 
-            "lidar must be a list");
-    }
-    
-    // Bozo filter on LIDAR argument list size
-    if (PyList_Size(py_lidar) != self->scan.size)
-    {        
-        return null_on_raise_argument_exception_with_details("Scan", "update", 
-            "lidar size mismatch");
-    }
-    
     // Default to no velocities
     double dxy_mm = 0;
     double dtheta_degrees = 0;
-          
+
     // Bozo filter on velocities tuple
     if (py_velocities)
     {
         if (!PyTuple_Check(py_velocities))
         {
-           return null_on_raise_argument_exception_with_details("Scan", "update", 
-                "velocities must be a tuple");    
+           return null_on_raise_argument_exception_with_details("Scan", "update",
+                "velocities must be a tuple");
         }
-        
+
         if (!double_from_tuple(py_velocities, 0, &dxy_mm) ||
             !double_from_tuple(py_velocities, 1, &dtheta_degrees))
             {
-                return null_on_raise_argument_exception_with_details("Scan", "update", 
-                    "velocities tuple must contain at least two numbers");    
-               
+                return null_on_raise_argument_exception_with_details("Scan", "update",
+                    "velocities tuple must contain at least two numbers");
+
             }
     }
-    
 
-    // Extract LIDAR values from argument
+    py_lidar_array = (PyArrayObject*)PyArray_FROM_OTF(py_lidar, NPY_DOUBLE, NPY_IN_ARRAY);
+    py_velocities_array = (PyArrayObject*)PyArray_FROM_OTF(py_velocities, NPY_DOUBLE, NPY_IN_ARRAY);
+    self->scan.size = py_lidar_array->dimensions[1];
+
+    // copy distance values into lidar_mm
     int k = 0;
     for (k=0; k<self->scan.size; ++k)
     {
-        self->lidar_mm[k] = PyFloat_AsDouble(PyList_GetItem(py_lidar, k));
+        self->lidar_mm[k] = *(double*)PyArray_GETPTR2(py_lidar_array, 0, k);
     }
-    
-    // Update the scan
+
+    // copy angle values into angles, converting to be CW relative to robot angle
+    for (k=0; k<self->scan.size; ++k)
+    {
+        self->angles[k] = *(double*)PyArray_GETPTR2(py_lidar_array, 1, k);
+    }
+
     scan_update(
-        &self->scan, 
-        self->lidar_mm, 
+        &self->scan,
+        self->lidar_mm,
+        self->angles,
         hole_width_mm,
         dxy_mm,
         dtheta_degrees);
-               
+
     Py_RETURN_NONE;
 }
+
+//static PyObject *
+//Scan_update(Scan *self, PyObject *args, PyObject *kwds)
+//{
+//    PyObject * py_lidar = NULL;
+//    double hole_width_mm = 0;
+//    PyObject * py_velocities = NULL;
+//
+//    static char* argnames[] = {"scans_mm", "hole_width_mm", "velocities", NULL};
+//
+//    if (!PyArg_ParseTupleAndKeywords(args, kwds,"Od|O", argnames,
+//        &py_lidar,
+//        &hole_width_mm,
+//        &py_velocities))
+//    {
+//        return null_on_raise_argument_exception("Scan", "update");
+//    }
+//
+//    // Bozo filter on LIDAR argument
+//    if (!PyList_Check(py_lidar))
+//    {
+//        return null_on_raise_argument_exception_with_details("Scan", "update",
+//            "lidar must be a list");
+//    }
+//
+//    // Bozo filter on LIDAR argument list size
+//    if (PyList_Size(py_lidar) != self->scan.size)
+//    {
+//        return null_on_raise_argument_exception_with_details("Scan", "update",
+//            "lidar size mismatch");
+//    }
+//
+//    // Default to no velocities
+//    double dxy_mm = 0;
+//    double dtheta_degrees = 0;
+//
+//    // Bozo filter on velocities tuple
+//    if (py_velocities)
+//    {
+//        if (!PyTuple_Check(py_velocities))
+//        {
+//           return null_on_raise_argument_exception_with_details("Scan", "update",
+//                "velocities must be a tuple");
+//        }
+//
+//        if (!double_from_tuple(py_velocities, 0, &dxy_mm) ||
+//            !double_from_tuple(py_velocities, 1, &dtheta_degrees))
+//            {
+//                return null_on_raise_argument_exception_with_details("Scan", "update",
+//                    "velocities tuple must contain at least two numbers");
+//
+//            }
+//    }
+//
+//
+//    // Extract LIDAR values from argument
+//    int k = 0;
+//    for (k=0; k<self->scan.size; ++k)
+//    {
+//        self->lidar_mm[k] = PyFloat_AsDouble(PyList_GetItem(py_lidar, k));
+//    }
+//
+//    // Update the scan
+////    scan_update(
+////        &self->scan,
+////        self->lidar_mm,
+////        hole_width_mm,
+////        dxy_mm,
+////        dtheta_degrees);
+//
+//    Py_RETURN_NONE;
+//}
 
 
 static PyMethodDef Scan_methods[] = 
@@ -867,7 +938,9 @@ initpybreezyslam(void)
         return;
     }
 
-    add_classes(module);    
+    import_array();
+
+    add_classes(module);
 }
 
 #else
@@ -899,6 +972,8 @@ PyInit_pybreezyslam(void)
     {
         return NULL;
     }
+
+    import_array();
     
     add_classes(module);
     
