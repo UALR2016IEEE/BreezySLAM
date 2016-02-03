@@ -254,6 +254,9 @@ class RMHCSlam(SinglePositionSLAM):
         if not velocities:
             velocities = (0, 0, 0)
 
+        # convert sign of dtheta_degrees
+        velocities = (velocities[0], -velocities[1], velocities[2])
+
         CoreSLAM.update(self, scan_mm, velocities)
 
     def _getNewPosition(self, start_position):
