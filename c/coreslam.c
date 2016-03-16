@@ -178,8 +178,8 @@ static void
             
             pixel_t * ptr = map_pixels + y1 * map_size + x1;
             int pixval = NO_OBSTACLE;
-
-            for (int x = 0; x <= dxc; x++, ptr += incptrx)
+	    int x;
+            for (x = 0; x <= dxc; x++, ptr += incptrx)
             {
                 if (x > dx - 2 * derrorv)
                 {
