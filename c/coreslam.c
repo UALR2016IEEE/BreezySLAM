@@ -178,9 +178,8 @@ static void
             
             pixel_t * ptr = map_pixels + y1 * map_size + x1;
             int pixval = NO_OBSTACLE;
-            
-            int x = 0;
-            for (x = 0; x <= dxc; x++, ptr += incptrx)
+
+            for (int x = 0; x <= dxc; x++, ptr += incptrx)
             {
                 if (x > dx - 2 * derrorv)
                 {
@@ -207,7 +206,17 @@ static void
                 }
                 
                 /* Integration into the map */
-                *ptr = ((256 - alpha) * (*ptr) + alpha * pixval) >> 8;
+                pixel_t nv = ((256 - alpha) * (*ptr) + alpha * pixval) >> 8;
+
+                // write new value if darker, or current value is unwritten
+                if (*ptr >= (OBSTACLE + NO_OBSTACLE) / 2)
+                {
+                    *ptr = nv;
+                }
+                else if(nv < *ptr)
+                {
+                    *ptr = nv;
+                }
                 
                 if (error > 0)
                 {
@@ -326,8 +335,8 @@ void
         
         x2p *= map->scale_pixels_per_mm * (1 + add);
         y2p *= map->scale_pixels_per_mm * (1 + add);
-        
-        {  
+
+        {
             int x2 = roundup(position.x_mm * map->scale_pixels_per_mm + x2p);
             int y2 = roundup(position.y_mm * map->scale_pixels_per_mm + y2p);
             

@@ -20,10 +20,10 @@ along with this code.  If not, see <http:#www.gnu.org/licenses/>.
 """
 
 # distanceScanToMap is implemented as a C extension for efficiency
-from pybreezyslam import distanceScanToMap
-import pybreezyslam
 import math
 import time
+
+import pybreezyslam
 
 # Basic params
 _DEFAULT_MAP_QUALITY = 50  # out of 255
@@ -152,8 +152,7 @@ class SinglePositionSLAM(CoreSLAM):
 
         # Initialize the position (x, y, theta)
         if init_x is not None and init_y is not None and init_r is not None:
-            init_x *= 1000 * map_size_meters
-            init_y *= 1000 * map_size_meters
+            pass
         else:
             init_x = 500 * map_size_meters  # center of map
             init_y = 500 * map_size_meters  # center of map
